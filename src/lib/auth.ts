@@ -13,8 +13,8 @@ if (!ACCESS_TOKEN_SECRET || !REFRESH_TOKEN_SECRET || !ACCESS_TOKEN_EXPIRES_IN
 
 const getSecretKey = (secret: string) => new TextEncoder().encode(secret);
 
-export async function signTokens(user: Pick<User, 'id' | 'role'>) {
-  const payload = { userId: user.id, role: user.role };
+export async function signTokens(user: Pick<User, 'id' | 'role' |'username'>) {
+  const payload = { userId: user.id, username: user.username, role: user.role };
 
   const accessToken = await new SignJWT(payload)
     .setProtectedHeader({ alg: 'HS256' })
