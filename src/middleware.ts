@@ -5,6 +5,7 @@ import type { JWTPayload } from 'jose';
 
 interface DecodedTokenPayload extends JWTPayload {
   userId: string;
+  username: string;
   role: string;
 }
 
@@ -12,47 +13,56 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const accessToken = request.cookies.get('access_token')?.value;
 
-  // 如果访问的是登录页或认证API，直接放行
-  const isAuthPage = pathname.startsWith('/login');
-  if (isAuthPage) {
+  // 检查是否为 API 路由
+  const isApiRoute = pathname.startsWith('/api/');
+  
+  // 公共页面（如登录页）直接放行
+  if (pathname.startsWith('/login') || pathname.startsWith('/api/auth')) {
     return NextResponse.next();
   }
-  
-  // 需要保护的路由
-  const protectedRoutes = ['/dashboard', '/api/data'];
-  const isProtectedRoute = protectedRoutes.some(route => pathname.startsWith(route));
 
-  if (isProtectedRoute) {
+  // --- API 路由保护逻辑 ---
+  if (isApiRoute) {
     if (!accessToken) {
-      return NextResponse.redirect(new URL('/login', request.url));
+      // API 请求没有 token，直接返回 401
+      return new NextResponse(JSON.stringify({ message: 'Authentication required.' }), { status: 401 });
     }
 
-    // 使用 await 调用异步的 verifyToken
+    // 对 API 请求进行严格验证
     const decoded = await verifyToken<DecodedTokenPayload>(accessToken, 'access');
 
     if (!decoded) {
-      const response = NextResponse.redirect(new URL('/login', request.url));
-      response.cookies.delete('access_token');
-      return response;
+      // API 请求的 token 无效或过期，返回 401
+      // 这是给客户端 fetcher 的信号，让它去尝试刷新
+      return new NextResponse(JSON.stringify({ message: 'Access token expired or invalid.' }), { status: 401 });
     }
-
-    // 将解码后的用户信息添加到请求头中，以便 API 路由使用
+    
+    // API 请求验证通过，将用户信息加入请求头并放行
     const requestHeaders = new Headers(request.headers);
     requestHeaders.set('X-User-Id', decoded.userId);
+    requestHeaders.set('X-User-Name', decoded.username);
     requestHeaders.set('X-User-Role', decoded.role);
-    
-    return NextResponse.next({
-      request: {
-        headers: requestHeaders,
-      },
-    });
+    requestHeaders.set('X-pathname', request.nextUrl.pathname);
+
+    return NextResponse.next({ request: { headers: requestHeaders } });
   }
 
-  return NextResponse.next();
+  // --- 页面路由保护逻辑 ---
+  // 对于页面访问，我们只做最基本的检查：是否存在 token
+  if (!accessToken) {
+    // 如果连 token 都没有，直接重定向到登录页
+    return NextResponse.redirect(new URL('/login', request.url));
+  }
+  
+  // 如果 token 存在（即使已过期），我们选择放行
+  // 让下游的 (protected)/layout.tsx 服务器组件去处理完整的验证和刷新逻辑
+  // 同时将当前路径放到 header 中
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set('X-pathname', request.nextUrl.pathname);
+  return NextResponse.next({ request: { headers: requestHeaders }});
 }
 
 export const config = {
-  matcher: [
-    '/((?!_next/static|_next/image|favicon.ico).*)',
-  ],
+  // 匹配所有非静态文件路径
+  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
 };

@@ -25,6 +25,7 @@ export async function POST(req: NextRequest) {
 
   // 在数据库中存储 Refresh Token
   validRefreshTokens.set(refreshToken, user.id);
+  console.log("DB set:", validRefreshTokens);
 
   const response = NextResponse.json({ message: 'Login successful', user: { id: user.id, username: user.username, role: user.role } }, { status: 200 });
 
@@ -40,10 +41,10 @@ export async function POST(req: NextRequest) {
     httpOnly: true,
     secure: process.env.NODE_ENV !== 'development',
     sameSite: 'strict',
-    path: '/api/auth/refresh', // 仅在此路径发送
+    path: '/', 
     maxAge: 60 * 60 * 24 * 7 // 7天
   }));
 
-  console.log("return OK");
+
   return response;
 }
